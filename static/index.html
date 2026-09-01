@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Prospect Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F5F6F4;
+    --surface:#FFFFFF;
+    --ink:#1C2530;
+    --muted:#5B6670;
+    --line:#DEE2E1;
+    --steel:#2C4A63;
+    --steel-dark:#1F3548;
+    --rust:#B5502E;
+    --rust-dark:#8F3E22;
+    --amber:#B8863A;
+    --green:#3F7A52;
+    --red-muted:#A14A3D;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'IBM Plex Sans', -apple-system, sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+  }
+  header{
+    background:var(--steel-dark);
+    color:#fff;
+    padding:28px 40px 24px;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:16px;
+    border-bottom:3px solid var(--rust);
+  }
+  header h1{
+    margin:0 0 4px;
+    font-size:22px;
+    font-weight:700;
+    letter-spacing:-0.01em;
+  }
+  header p{
+    margin:0;
+    color:#B9C4CE;
+    font-size:14px;
+  }
+  .header-actions{display:flex; gap:10px;}
+  button{
+    font-family:inherit;
+    font-size:14px;
+    font-weight:600;
+    border-radius:4px;
+    padding:9px 16px;
+    border:1px solid transparent;
+    cursor:pointer;
+    transition:background 0.15s ease;
+  }
+  .btn-primary{background:var(--rust); color:#fff;}
+  .btn-primary:hover{background:var(--rust-dark);}
+  .btn-secondary{background:transparent; color:#fff; border-color:#4C6478;}
+  .btn-secondary:hover{background:#33506A;}
+  .btn-ghost{background:transparent; color:var(--steel); border-color:var(--line);}
+  .btn-ghost:hover{background:#EEF1F0;}
+  .btn-small{padding:5px 12px; font-size:13px;}
+  main{padding:28px 40px 60px; max-width:1200px; margin:0 auto;}
+
+  #search-panel{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:20px 24px;
+    margin-bottom:24px;
+    display:none;
+  }
+  #search-panel.open{display:block;}
+  #search-panel h2{margin:0 0 16px; font-size:15px; font-weight:600;}
+  .field-row{display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px;}
+  .field{flex:1; min-width:200px;}
+  .field label{display:block; font-size:12px; color:var(--muted); margin-bottom:5px; font-weight:500;}
+  .field input{
+    width:100%;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    font-family:inherit;
+    font-size:14px;
+  }
+  .field input:focus{outline:2px solid var(--steel); outline-offset:1px;}
+  .field small{display:block; margin-top:4px; color:var(--muted); font-size:12px;}
+
+  .tabs{display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:0;}
+  .tab{
+    padding:10px 18px;
+    font-size:14px;
+    font-weight:500;
+    color:var(--muted);
+    cursor:pointer;
+    border-bottom:2px solid transparent;
+    user-select:none;
+  }
+  .tab.active{color:var(--steel-dark); border-bottom-color:var(--rust); font-weight:600;}
+  .tab .count{color:var(--muted); font-weight:400;}
+
+  .table-wrap{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-top:none;
+    border-radius:0 0 6px 6px;
+    overflow:hidden;
+  }
+  table{width:100%; border-collapse:collapse; font-size:14px;}
+  thead th{
+    text-align:left;
+    padding:11px 14px;
+    background:#FAFAF9;
+    color:var(--muted);
+    font-weight:500;
+    font-size:12.5px;
+    border-bottom:1px solid var(--line);
+  }
+  tbody td{
+    padding:12px 14px;
+    border-bottom:1px solid var(--line);
+    vertical-align:top;
+  }
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:#FBFBFA;}
+  .name-cell{font-weight:600;}
+  .sub{color:var(--muted); font-size:12.5px;}
+  .tier-1{color:var(--rust-dark); font-weight:600;}
+  a.linkedin-link{color:var(--steel); text-decoration:none; font-size:13px;}
+  a.linkedin-link:hover{text-decoration:underline;}
+
+  .pill{
+    display:inline-block;
+    padding:3px 9px;
+    border-radius:20px;
+    font-size:12px;
+    font-weight:600;
+  }
+  .pill-pending{background:#F3E7D2; color:var(--amber);}
+  .pill-approved{background:#DCE6EC; color:var(--steel-dark);}
+  .pill-rejected{background:#EFDCD8; color:var(--red-muted);}
+  .pill-synced{background:#DCEADF; color:var(--green);}
+
+  .row-actions{display:flex; gap:6px;}
+  .row-actions button.approve{background:var(--green); color:#fff;}
+  .row-actions button.reject{background:transparent; color:var(--red-muted); border-color:#DDBBB4;}
+
+  .empty-state{padding:60px 20px; text-align:center; color:var(--muted);}
+  .empty-state strong{display:block; color:var(--ink); font-size:15px; margin-bottom:6px;}
+
+  #toast{
+    position:fixed; bottom:24px; right:24px;
+    background:var(--steel-dark); color:#fff;
+    padding:12px 18px; border-radius:6px;
+    font-size:14px; max-width:340px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.18);
+    display:none;
+  }
+  #toast.show{display:block;}
+  code.mono{font-family:ui-monospace, monospace; font-size:12.5px; color:var(--muted);}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Prospect Pipeline</h1>
+    <p>Review contacts found by the search agents before they reach the CRM</p>
+  </div>
+  <div class="header-actions">
+    <button class="btn-secondary" id="toggle-search-btn">Start new search</button>
+    <button class="btn-primary" id="sync-btn">Sync approved to Odoo</button>
+  </div>
+</header>
+
+<main>
+
+  <div id="search-panel">
+    <h2>Find companies and contacts</h2>
+    <div class="field-row">
+      <div class="field">
+        <label for="f-city">City</label>
+        <input type="text" id="f-city" placeholder="Anaheim" />
+      </div>
+      <div class="field">
+        <label for="f-industries">Industries</label>
+        <input type="text" id="f-industries" placeholder="manufacturing, metal fabrication" />
+        <small>Comma-separated</small>
+      </div>
+      <div class="field">
+        <label for="f-titles">Target titles</label>
+        <input type="text" id="f-titles" placeholder="Facilities Manager, Plant Manager, Buyer" />
+        <small>Leave blank to use the default Tier 1 list</small>
+      </div>
+    </div>
+    <button class="btn-primary" id="run-search-btn">Run search</button>
+    <span class="sub" id="search-status" style="margin-left:12px;"></span>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-status="pending">Pending</div>
+    <div class="tab" data-status="approved">Approved</div>
+    <div class="tab" data-status="rejected">Rejected</div>
+    <div class="tab" data-status="synced">Synced</div>
+  </div>
+
+  <div class="table-wrap">
+    <table id="leads-table">
+      <thead>
+        <tr>
+          <th>Contact</th>
+          <th>Title</th>
+          <th>Company</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>LinkedIn</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="leads-body"></tbody>
+    </table>
+    <div class="empty-state" id="empty-state" style="display:none;">
+      <strong>No leads here yet</strong>
+      Start a search above to find prospects.
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+const API = ''; // same-origin — dashboard is served by the same FastAPI app
+let currentTab = 'pending';
+
+function showToast(msg, isError=false){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = isError ? 'var(--red-muted)' : 'var(--steel-dark)';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+async function apiCall(path, options={}){
+  try{
+    const res = await fetch(API + path, {
+      headers: {'Content-Type': 'application/json'},
+      ...options,
+    });
+    if(!res.ok){
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Request failed (${res.status})`);
+    }
+    return await res.json();
+  }catch(e){
+    showToast(e.message || 'Request failed', true);
+    throw e;
+  }
+}
+
+function pillClass(status){
+  return {pending:'pill-pending', approved:'pill-approved', rejected:'pill-rejected', synced:'pill-synced'}[status] || '';
+}
+
+function renderRow(lead){
+  const tr = document.createElement('tr');
+  const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || '—';
+  const tierClass = lead.title_tier === 'tier_1' ? 'tier-1' : '';
+
+  let actions = '';
+  if(lead.status === 'pending'){
+    actions = `
+      <div class="row-actions">
+        <button class="btn-small approve" data-id="${lead.id}" data-action="approve">Approve</button>
+        <button class="btn-small reject" data-id="${lead.id}" data-action="reject">Reject</button>
+      </div>`;
+  } else if(lead.status === 'approved'){
+    actions = `<span class="pill ${pillClass(lead.status)}">Ready to sync</span>`;
+  } else {
+    actions = `<span class="pill ${pillClass(lead.status)}">${lead.status}</span>`;
+  }
+
+  tr.innerHTML = `
+    <td class="name-cell">${name}</td>
+    <td class="${tierClass}">${lead.title || '—'}</td>
+    <td>Company #${lead.company_id}</td>
+    <td>
+      <code class="mono">${lead.email || '—'}</code>
+      ${lead.email_confidence ? `<div class="sub">${lead.email_confidence.replace('_',' ')}</div>` : ''}
+    </td>
+    <td>${lead.direct_phone || '—'}</td>
+    <td>${lead.linkedin_url ? `<a class="linkedin-link" href="${lead.linkedin_url}" target="_blank" rel="noopener">Profile ↗</a>` : '—'}</td>
+    <td>${actions}</td>
+  `;
+  return tr;
+}
+
+async function loadLeads(){
+  const body = document.getElementById('leads-body');
+  const empty = document.getElementById('empty-state');
+  body.innerHTML = '';
+
+  let leads;
+  try{
+    leads = await apiCall(`/leads/?status=${currentTab}`);
+  }catch(e){
+    empty.style.display = 'block';
+    empty.querySelector('strong').textContent = "Couldn't load leads";
+    return;
+  }
+
+  if(!leads.length){
+    empty.style.display = 'block';
+    empty.querySelector('strong').textContent = 'No leads here yet';
+    return;
+  }
+  empty.style.display = 'none';
+  leads.forEach(lead => body.appendChild(renderRow(lead)));
+}
+
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.tab');
+  if(!tab) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  currentTab = tab.dataset.status;
+  loadLeads();
+});
+
+document.getElementById('leads-body').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if(!btn) return;
+  const id = btn.dataset.id;
+  const action = btn.dataset.action;
+  try{
+    await apiCall(`/leads/${id}/${action}`, {method:'POST'});
+    showToast(`Lead ${action === 'approve' ? 'approved' : 'rejected'}`);
+    loadLeads();
+  }catch(e){ /* toast already shown */ }
+});
+
+document.getElementById('toggle-search-btn').addEventListener('click', () => {
+  document.getElementById('search-panel').classList.toggle('open');
+});
+
+document.getElementById('run-search-btn').addEventListener('click', async () => {
+  const city = document.getElementById('f-city').value.trim();
+  const industries = document.getElementById('f-industries').value
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const titlesRaw = document.getElementById('f-titles').value.trim();
+  const titles = titlesRaw ? titlesRaw.split(',').map(s => s.trim()).filter(Boolean) : null;
+  const status = document.getElementById('search-status');
+
+  if(!city || !industries.length){
+    status.textContent = 'City and at least one industry are required.';
+    status.style.color = 'var(--red-muted)';
+    return;
+  }
+
+  status.textContent = 'Starting…';
+  status.style.color = 'var(--muted)';
+
+  try{
+    const run = await apiCall('/search-runs/', {
+      method: 'POST',
+      body: JSON.stringify({city, industries, titles}),
+    });
+    status.textContent = `Search #${run.id} running in the background — refresh Pending in a moment.`;
+    status.style.color = 'var(--green)';
+  }catch(e){
+    status.textContent = 'Could not start search.';
+    status.style.color = 'var(--red-muted)';
+  }
+});
+
+document.getElementById('sync-btn').addEventListener('click', async () => {
+  try{
+    const result = await apiCall('/leads/sync-approved', {method:'POST'});
+    const synced = result.synced ? result.synced.length : 0;
+    const failed = result.failed ? result.failed.length : 0;
+    showToast(`Synced ${synced} lead(s) to Odoo${failed ? `, ${failed} failed` : ''}.`, failed > 0);
+    if(currentTab === 'approved' || currentTab === 'synced') loadLeads();
+  }catch(e){ /* toast already shown */ }
+});
+
+loadLeads();
+</script>
+</body>
+</html>
