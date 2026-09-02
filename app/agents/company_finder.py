@@ -9,6 +9,8 @@ from app.config import settings
 from app.models import Company, SearchRun
 from app.services.google_places import PlacesSearchError, places_text_search
 from app.services.outscraper_client import OutscraperError, maps_search
+from app.services.serpapi_client import SerpApiError
+from app.services.serpapi_client import maps_search as serpapi_maps_search
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,13 @@ def _search_places(query: str, limit: int) -> Tuple[List[Dict], str | None]:
         except OutscraperError as e:
             logger.warning("Outscraper search failed for '%s': %s", query, e)
             return [], f"Outscraper: {e}"
+
+    if provider == "serpapi":
+        try:
+            return serpapi_maps_search(query, limit=limit), None
+        except SerpApiError as e:
+            logger.warning("SerpApi search failed for '%s': %s", query, e)
+            return [], f"SerpApi: {e}"
 
     if provider == "places":
         try:

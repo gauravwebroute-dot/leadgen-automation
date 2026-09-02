@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     # "places" or "outscraper" — swap without touching company_finder.py
     company_discovery_provider: str = "outscraper"
     outscraper_api_key: str = ""
+    serpapi_api_key: str = ""
 
     hunter_api_key: str = ""
 
