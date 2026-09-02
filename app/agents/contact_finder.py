@@ -171,6 +171,7 @@ def run_contact_finder(
                     "[contact_finder]   → FAILED to save contact %s %s: %s",
                     person["first_name"], person["last_name"], e, exc_info=True,
                 )
+                warnings.append(f"Could not save contact {person['first_name']} {person['last_name']}: {e}")
                 continue
 
         time.sleep(_QUERY_DELAY_SECONDS)

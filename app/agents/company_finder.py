@@ -99,6 +99,16 @@ def run_company_finder(
                 if not name:
                     continue
 
+                existing = (
+                    db.query(Company)
+                    .filter(Company.name == name, Company.city == search_run.city)
+                    .first()
+                )
+                if existing:
+                    logger.info("Company already in DB: %s (%s) — reusing record", name, search_run.city)
+                    found.append(existing)
+                    continue
+
                 company = Company(
                     name=name,
                     industry=industry,
@@ -109,20 +119,8 @@ def run_company_finder(
                     search_run_id=search_run.id,
                 )
                 db.add(company)
-                try:
-                    db.flush()
-                    found.append(company)
-                except IntegrityError:
-                    db.rollback()
-                    logger.info("Company already in DB: %s (%s) — retrieving existing record", name, search_run.city)
-                    existing = (
-                        db.query(Company)
-                        .filter(Company.name == name, Company.city == search_run.city)
-                        .first()
-                    )
-                    if existing:
-                        found.append(existing)
-                    continue
+                db.flush()
+                found.append(company)
 
             time.sleep(_QUERY_DELAY_SECONDS)
 
