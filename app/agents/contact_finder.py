@@ -89,18 +89,21 @@ def run_contact_finder(
     for company in companies:
         domain = _domain_from_website(company.website)
         if not domain:
+            logger.info("[contact_finder] SKIP company=%r -- no website/domain", company.name)
             continue
 
         queries_attempted += 1
+        logger.info("[contact_finder] Searching Hunter domain=%r company=%r", domain, company.name)
         try:
             people = domain_search(domain, limit=max_results_per_query)
         except HunterDomainSearchError as e:
-            logger.warning("Hunter Domain Search failed for '%s': %s", domain, e)
+            logger.warning("[contact_finder] Hunter failed for domain=%r: %s", domain, e)
             msg = f"Hunter Domain Search: {e}"
             if msg not in warnings:
                 warnings.append(msg)
             continue
 
+        logger.info("[contact_finder] Hunter returned %d people for domain=%r", len(people), domain)
         total_people_seen += len(people)
 
         for person in people:
@@ -111,12 +114,19 @@ def run_contact_finder(
                 sample_titles_seen.append(t)
 
             matched_title = _matching_tier_title(person["title"], titles)
+            # INFO-level so this always appears in Render logs without debug mode.
+            logger.info(
+                "[contact_finder]   person=%s %s | title=%r | email=%r | match=%r",
+                person["first_name"], person["last_name"],
+                person["title"], person["email"] or "(none)", matched_title,
+            )
             if not matched_title:
                 continue
 
             # Keep the contact even without an email -- they still have a
             # verified name, phone, and/or LinkedIn URL that's worth reviewing.
-            # An empty email here is better than silently dropping a real lead.
+            # An empty email is better than silently dropping a real lead.
+            logger.info("[contact_finder]   → MATCH '%s' -- saving contact", matched_title)
 
             contact = Contact(
                 company_id=company.id,
@@ -139,14 +149,20 @@ def run_contact_finder(
             except IntegrityError:
                 db.rollback()
                 logger.info(
-                    "Duplicate contact skipped: %s %s at %s",
+                    "[contact_finder]   → DUPLICATE skipped: %s %s at %s",
                     person["first_name"], person["last_name"], company.name,
                 )
                 continue
 
             found.append(contact)
+            logger.info("[contact_finder]   → Contact queued (will commit at end)")
 
         time.sleep(_QUERY_DELAY_SECONDS)
+
+    logger.info(
+        "[contact_finder] DONE: companies=%d, people_seen=%d, matched=%d, wanted=%s",
+        len(companies), total_people_seen, len(found), titles,
+    )
 
     if companies and not found and not warnings:
         if total_people_seen == 0:
