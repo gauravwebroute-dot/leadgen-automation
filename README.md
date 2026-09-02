@@ -1,29 +1,27 @@
 # Lead Generation Automation
 
 Finds target companies by industry/city, finds decision-maker contacts
-(facilities, maintenance, plant, purchasing, procurement titles), verifies
-contact emails, and syncs approved leads into Odoo CRM. Includes a demo
+(facilities, maintenance, plant, purchasing, procurement titles) with
+verified emails, and syncs approved leads into Odoo CRM. Includes a demo
 dashboard for reviewing leads before they're approved.
-
-Every stage tested end-to-end (routes, DB writes, dedup, background
-pipeline, error handling, dashboard serving) before packaging.
 
 ## Pipeline
 
-1. **Company finder** -- searches Google Places API for real businesses
-   matching `{industry}` near `{city}`. Returns structured data (name,
-   address, phone, website) -- not parsed search snippets.
-2. **Contact finder** -- for each company + target title, searches
-   `site:linkedin.com/in "{title}" "{company}"` via Google Custom Search
-   and extracts candidate names.
-3. **Enrichment** -- guesses `first.last@domain` from the company website,
-   then verifies it through Hunter's Email Verifier API (MX + SMTP check).
-   Only marked `verified` if Hunter confirms the mailbox is real; otherwise
-   tagged `risky`, `invalid`, or `unverified_guess` so nothing masquerades
-   as trustworthy data.
-4. **Human review** -- every lead lands as `pending`. Use the dashboard
+1. **Company finder** -- searches Google Places, Outscraper, or SerpApi
+   (configurable) for real businesses matching `{industry}` near `{city}`.
+   Returns structured data: name, address, phone, website.
+2. **Contact finder** -- for each company, looks up its website domain in
+   **Hunter's Domain Search API**, which returns real people at that
+   domain: name, job title, department, and an email with Hunter's own
+   verification status attached. Contacts are kept if their title matches
+   your target list (word-overlap match, so "Plant Manager" also matches
+   "Plant Operations Manager"). One Hunter credit per company -- no
+   per-title multiplier, no LinkedIn search, no name-guessing regex, no
+   email-pattern-guessing. Everything here is real data Hunter found, not
+   inferred.
+3. **Human review** -- every lead lands as `pending`. Use the dashboard
    (or `POST /leads/{id}/approve`) to review before anything reaches Odoo.
-5. **Odoo sync** -- `POST /leads/sync-approved` pushes all approved leads
+4. **Odoo sync** -- `POST /leads/sync-approved` pushes all approved leads
    as `crm.lead` records.
 
 ## Setup
@@ -40,25 +38,17 @@ Open `http://localhost:8000/dashboard/` for the review UI, or
 
 ### Getting your keys
 
-**Google Places API** (company discovery)
-1. console.cloud.google.com -> APIs & Services -> Library -> enable
-   "Places API (New)".
-2. Create an API key under Credentials.
-3. `GOOGLE_PLACES_API_KEY` in `.env`.
+**Company discovery** -- pick ONE via `COMPANY_DISCOVERY_PROVIDER`:
+- `outscraper` -- outscraper.com, free monthly credits for testing
+- `serpapi` -- serpapi.com, free tier: 100 searches/month
+- `places` -- Google Cloud Console, enable "Places API (New)", billed per
+  request (no free tier)
 
-**Google Custom Search** (contact discovery on LinkedIn only)
-1. programmablesearchengine.google.com -> create a search engine.
-2. Under "Sites to search", add `linkedin.com`. ("Search the entire web"
-   is no longer available for new engines as of Jan 2026 -- Google now
-   caps free/new engines at 50 specific domains -- so this is scoped to
-   just LinkedIn, which is all the contact finder needs.)
-3. Copy the Search engine ID as `GOOGLE_CSE_CX`.
-4. Enable the Custom Search API in Cloud Console, generate an API key as
-   `GOOGLE_CSE_API_KEY`.
-
-**Hunter.io** (email verification)
-1. hunter.io -> sign up (free tier: 50 credits/month, ~100 verifications).
+**Hunter.io** (contact discovery + email verification)
+1. hunter.io -> sign up (free tier: 50 credits/month).
 2. Copy your API key as `HUNTER_API_KEY`.
+3. Make sure the companies you search have a real `website` populated by
+   the company finder -- Hunter needs a domain, not just a company name.
 
 **Odoo**
 1. Odoo Settings -> Users -> your user -> API Keys -> generate one.
@@ -84,25 +74,23 @@ curl -X POST localhost:8000/leads/sync-approved
 
 ## Known limitations (by design, for v1)
 
-- **Google Places API is billed per request** (not free like the old CSE
-  "entire web" option was) -- check current pricing before running large
-  batches.
-- **Google CSE free tier = 100 queries/day**, and contact discovery is
-  scoped to LinkedIn only per the Jan 2026 domain cap.
-- **Hunter free tier = ~100 verifications/month** -- budget your search
-  batch sizes accordingly, or the enrichment stage falls back to
-  `unverified_guess` once credits run out.
-- **Name extraction from LinkedIn search snippets is still heuristic**
-  (regex on "First Last - Title - Company" patterns) -- this is the one
-  piece not yet backed by a structured API. A people-data API (Apollo.io,
-  ContactOut) would remove this; not wired up in v1.
-- **No Alembic migrations yet** -- tables are created via
-  `Base.metadata.create_all()` on startup. Fine for one dev DB; add
-  Alembic before this touches a shared/production database.
+- **Hunter free tier is 50 credits/month.** The `max_companies_for_contacts`
+  cap (default 5) protects this -- each run uses at most that many credits.
+- **Small/obscure companies may have no Hunter data at all** -- Hunter's
+  coverage depends on public web presence. If a run's warning says "found
+  the domain but no one matched your target titles," it may mean Hunter
+  has zero people on file for that company, not that your titles are wrong.
+- **Company discovery providers each cost differently** -- Outscraper and
+  SerpApi have free tiers for testing; Google Places is billed per
+  request with no free tier. Check current pricing before large batches.
+- **No Alembic migrations yet** -- a lightweight auto-migration in
+  `app/db.py` adds missing columns to existing tables on startup (fine
+  for a solo project against Render's Postgres); switch to real Alembic
+  migrations before more than one person touches this schema.
 
 ## What to build next (not included)
 
-- Swap `site:linkedin.com/in` contact search for a structured people-data
-  API (Apollo.io/ContactOut) to remove the last heuristic-parsing step.
+- If Hunter's coverage is too thin for smaller companies, a paid
+  people-data API (Apollo.io, ContactOut) could supplement it.
 - Rate-limit backoff / query budget tracking against the free-tier caps.
 - Auth on the dashboard before it's exposed anywhere but localhost.

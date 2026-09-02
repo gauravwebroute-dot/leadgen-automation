@@ -1,17 +1,17 @@
 import logging
-import re
 import time
 from typing import List, Optional, Tuple
+from urllib.parse import urlparse
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Company, Contact, TitleTier
-from app.services.google_search import GoogleSearchError, google_search
+from app.services.hunter_domain_search import HunterDomainSearchError, domain_search
 
 logger = logging.getLogger(__name__)
 
-# Title hierarchy from the sourcing brief — tier 1 is the primary target.
+# Title hierarchy from the sourcing brief -- tier 1 is the primary target.
 TIER_1_TITLES = [
     "Facilities Manager",
     "Maintenance Manager",
@@ -32,38 +32,47 @@ TITLE_TIER_MAP = {t: TitleTier.tier_1 for t in TIER_1_TITLES}
 TITLE_TIER_MAP.update({t: TitleTier.tier_2 for t in TIER_2_TITLES})
 TITLE_TIER_MAP.update({t: TitleTier.tier_3 for t in TIER_3_TITLES})
 
-# Matches a leading "First Last" in a LinkedIn result title, e.g.
-# "John Smith - Plant Manager - ABC Manufacturing | LinkedIn"
-_NAME_RE = re.compile(r"^([A-Z][a-zA-Z'-]+)\s+([A-Z][a-zA-Z'-]+)")
-
-_QUERY_DELAY_SECONDS = 0.2
+_QUERY_DELAY_SECONDS = 0.3
 
 
-def _guess_name(snippet_title: str) -> Tuple[Optional[str], Optional[str]]:
-    """Best-effort first/last name extraction. Returns (None, None) if unclear —
-    callers should skip the result rather than guess further."""
-    match = _NAME_RE.match(snippet_title.strip())
-    if not match:
-        return None, None
-    return match.group(1), match.group(2)
+def _domain_from_website(website: str) -> str:
+    if not website:
+        return ""
+    parsed = urlparse(website if "//" in website else f"//{website}")
+    netloc = parsed.netloc or parsed.path
+    return netloc.replace("www.", "").split("/")[0]
+
+
+def _matching_tier_title(position: str, wanted_titles: List[str]) -> Optional[str]:
+    """Word-overlap match -- Hunter's `position` field is free text
+    ("Plant Operations Manager", "Buyer II"), so neither an exact match nor
+    a plain substring check against the tier list catches most real titles
+    (e.g. "Plant Manager" is not a substring of "Plant Operations Manager"
+    even though it's clearly the same role). Matches when every word of a
+    target title appears somewhere in the position."""
+    position_lower = (position or "").lower()
+    if not position_lower:
+        return None
+    for title in wanted_titles:
+        words = title.lower().split()
+        if all(word in position_lower for word in words):
+            return title
+    return None
 
 
 def run_contact_finder(
     db: Session,
     companies: List[Company],
     titles: Optional[List[str]] = None,
-    max_results_per_query: int = 5,
+    max_results_per_query: int = 10,
 ) -> Tuple[List[Contact], int, List[str]]:
-    """For each company, search for people holding each target title.
+    """For each company, looks up its domain in Hunter and keeps people
+    whose title matches the target list.
 
-    Uses `site:linkedin.com/in` — this queries Google's public index, not
-    linkedin.com directly, matching the manual research process it's
-    automating rather than scraping LinkedIn itself.
-
-    This is the expensive stage against your Google CSE daily quota: it's
-    one query per (company x title) — 10 companies x 6 default titles is
-    60 queries in a single run. Returns (contacts_found, queries_attempted,
-    warnings) -- warnings are deduplicated failure reasons for the dashboard.
+    One Hunter query per COMPANY (not per company x title like the old
+    LinkedIn-search approach) -- a real cost reduction on top of getting
+    real data instead of guesses. Returns (contacts_found,
+    queries_attempted, warnings).
     """
     titles = titles or TIER_1_TITLES
     found: List[Contact] = []
@@ -71,50 +80,59 @@ def run_contact_finder(
     warnings: List[str] = []
 
     for company in companies:
-        for title in titles:
-            query = f'site:linkedin.com/in "{title}" "{company.name}"'
-            queries_attempted += 1
+        domain = _domain_from_website(company.website)
+        if not domain:
+            continue
 
-            try:
-                items = google_search(query, num=max_results_per_query)
-            except GoogleSearchError as e:
-                logger.warning("Contact search failed for '%s': %s", query, e)
-                msg = f"Google CSE: {e}"
-                if msg not in warnings:
-                    warnings.append(msg)
+        queries_attempted += 1
+        try:
+            people = domain_search(domain, limit=max_results_per_query)
+        except HunterDomainSearchError as e:
+            logger.warning("Hunter Domain Search failed for '%s': %s", domain, e)
+            msg = f"Hunter Domain Search: {e}"
+            if msg not in warnings:
+                warnings.append(msg)
+            continue
+
+        for person in people:
+            matched_title = _matching_tier_title(person["title"], titles)
+            if not matched_title or not person["email"]:
                 continue
 
-            for item in items:
-                first, last = _guess_name(item.get("title", ""))
-                if not first:
-                    continue
-
-                contact = Contact(
-                    company_id=company.id,
-                    first_name=first,
-                    last_name=last,
-                    title=title,
-                    title_tier=TITLE_TIER_MAP.get(title, TitleTier.tier_2),
-                    linkedin_url=item.get("link", ""),
-                    source="google_cse_linkedin",
-                    notes=(item.get("snippet", "") or "")[:500],
+            contact = Contact(
+                company_id=company.id,
+                first_name=person["first_name"],
+                last_name=person["last_name"],
+                title=person["title"] or matched_title,
+                title_tier=TITLE_TIER_MAP.get(matched_title, TitleTier.tier_2),
+                linkedin_url=person["linkedin_url"],
+                direct_phone=person["phone"] or company.main_phone,
+                email=person["email"],
+                # Hunter's own verification status -- "valid", "accept_all",
+                # or "unknown" -- not a guess we're labeling ourselves.
+                email_confidence=person["email_status"],
+                source="hunter_domain_search",
+                notes=f"Department: {person['department']}" if person["department"] else None,
+            )
+            db.add(contact)
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+                logger.info(
+                    "Duplicate contact skipped: %s %s at %s",
+                    person["first_name"], person["last_name"], company.name,
                 )
-                db.add(contact)
-                try:
-                    db.flush()
-                except IntegrityError:
-                    db.rollback()
-                    logger.info("Duplicate contact skipped: %s %s at %s", first, last, company.name)
-                    continue
+                continue
 
-                found.append(contact)
+            found.append(contact)
 
-            time.sleep(_QUERY_DELAY_SECONDS)
+        time.sleep(_QUERY_DELAY_SECONDS)
 
     if companies and not found and not warnings:
         warnings.append(
-            "Google CSE returned 0 LinkedIn matches -- try broader/more common titles, "
-            "or confirm the search engine's 'Sites to search' includes linkedin.com."
+            "Hunter found the domain(s) but no one matched your target titles -- "
+            "try broader titles, or the company may be too small for Hunter to have data on."
         )
 
     db.commit()

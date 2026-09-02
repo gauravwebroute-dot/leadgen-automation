@@ -4,9 +4,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg2://leadgen:leadgen@localhost:5432/leadgen"
 
-    google_cse_api_key: str = ""
-    google_cse_cx: str = ""
-
     google_places_api_key: str = ""
 
     # "places" or "outscraper" — swap without touching company_finder.py
