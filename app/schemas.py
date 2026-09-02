@@ -36,6 +36,7 @@ class ContactOut(BaseModel):
 
     id: int
     company_id: int
+    company_name: Optional[str] = None   # populated by the leads router
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     title: Optional[str] = None

@@ -215,7 +215,8 @@
   </div>
 
   <div class="tabs" id="tabs">
-    <div class="tab active" data-status="pending">Pending</div>
+    <div class="tab active" data-status="all">All Contacts</div>
+    <div class="tab" data-status="pending">Pending</div>
     <div class="tab" data-status="approved">Approved</div>
     <div class="tab" data-status="rejected">Rejected</div>
     <div class="tab" data-status="synced">Synced</div>
@@ -250,7 +251,7 @@
 
 <script>
 const API = ''; // same-origin — dashboard is served by the same FastAPI app
-let currentTab = 'pending';
+let currentTab = 'all';
 
 function showToast(msg, isError=false){
   const t = document.getElementById('toast');
@@ -285,6 +286,7 @@ function renderRow(lead){
   const tr = document.createElement('tr');
   const name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || '—';
   const tierClass = lead.title_tier === 'tier_1' ? 'tier-1' : '';
+  const company = lead.company_name || `Company #${lead.company_id}`;
 
   let actions = '';
   if(lead.status === 'pending'){
@@ -294,7 +296,17 @@ function renderRow(lead){
         <button class="btn-small reject" data-id="${lead.id}" data-action="reject">Reject</button>
       </div>`;
   } else if(lead.status === 'approved'){
-    actions = `<span class="pill ${pillClass(lead.status)}">Ready to sync</span>`;
+    actions = `
+      <div class="row-actions">
+        <span class="pill ${pillClass(lead.status)}">Ready to sync</span>
+        <button class="btn-small reject" data-id="${lead.id}" data-action="reject">Reject</button>
+      </div>`;
+  } else if(lead.status === 'rejected'){
+    actions = `
+      <div class="row-actions">
+        <button class="btn-small approve" data-id="${lead.id}" data-action="approve">Re-approve</button>
+        <span class="pill ${pillClass(lead.status)}">Rejected</span>
+      </div>`;
   } else {
     actions = `<span class="pill ${pillClass(lead.status)}">${lead.status}</span>`;
   }
@@ -302,7 +314,7 @@ function renderRow(lead){
   tr.innerHTML = `
     <td class="name-cell">${name}</td>
     <td class="${tierClass}">${lead.title || '—'}</td>
-    <td>Company #${lead.company_id}</td>
+    <td>${company}</td>
     <td>
       <code class="mono">${lead.email || '—'}</code>
       ${lead.email_confidence ? `<div class="sub">${lead.email_confidence.replace('_',' ')}</div>` : ''}
@@ -319,9 +331,10 @@ async function loadLeads(){
   const empty = document.getElementById('empty-state');
   body.innerHTML = '';
 
+  const url = currentTab === 'all' ? '/leads/all' : `/leads/?status=${currentTab}`;
   let leads;
   try{
-    leads = await apiCall(`/leads/?status=${currentTab}`);
+    leads = await apiCall(url);
   }catch(e){
     empty.style.display = 'block';
     empty.querySelector('strong').textContent = "Couldn't load leads";
@@ -427,10 +440,10 @@ async function pollSearchRun(runId){
         warnBox.innerHTML = run.warnings.split('\n').map(w => `⚠ ${w}`).join('<br>');
         status.after(warnBox);
       }
-      // Switch to Pending and show the new leads automatically.
+      // Switch to All Contacts and show the new leads automatically.
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelector('.tab[data-status="pending"]').classList.add('active');
-      currentTab = 'pending';
+      document.querySelector('.tab[data-status="all"]').classList.add('active');
+      currentTab = 'all';
       loadLeads();
     } else if(run.status === 'failed'){
       status.textContent = `Search #${runId} failed: ${run.error_message || 'unknown error'}`;

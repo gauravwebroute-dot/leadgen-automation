@@ -12,12 +12,30 @@ from app.services.odoo_client import OdooClientError
 router = APIRouter(prefix="/leads", tags=["leads"])
 
 
+def _enrich(contacts) -> list:
+    """Inject company_name into each contact dict for the dashboard."""
+    out = []
+    for c in contacts:
+        d = ContactOut.model_validate(c).model_dump()
+        d["company_name"] = c.company.name if c.company else None
+        out.append(d)
+    return out
+
+
+@router.get("/all", response_model=List[ContactOut])
+def list_all_leads(db: Session = Depends(get_db)):
+    """Return every contact regardless of status — used by the All tab."""
+    contacts = db.query(Contact).order_by(Contact.created_at.desc()).all()
+    return _enrich(contacts)
+
+
 @router.get("/", response_model=List[ContactOut])
 def list_leads(status: Optional[LeadStatus] = None, db: Session = Depends(get_db)):
     query = db.query(Contact)
     if status:
         query = query.filter(Contact.status == status)
-    return query.order_by(Contact.created_at.desc()).all()
+    contacts = query.order_by(Contact.created_at.desc()).all()
+    return _enrich(contacts)
 
 
 @router.post("/{contact_id}/approve", response_model=ContactOut)
