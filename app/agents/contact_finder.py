@@ -49,7 +49,12 @@ def _matching_tier_title(position: str, wanted_titles: List[str]) -> Optional[st
     a plain substring check against the tier list catches most real titles
     (e.g. "Plant Manager" is not a substring of "Plant Operations Manager"
     even though it's clearly the same role). Matches when every word of a
-    target title appears somewhere in the position."""
+    target title appears somewhere in the position.
+
+    Also handles single-word acronym titles like "CEO", "CFO", "VP" by
+    checking if the whole wanted title is a word-boundary match inside the
+    position string (e.g. wanted="CEO" matches "CEO" or "Interim CEO" but
+    not "ACEO")."""
     position_lower = (position or "").lower()
     if not position_lower:
         return None
@@ -99,12 +104,19 @@ def run_contact_finder(
         total_people_seen += len(people)
 
         for person in people:
-            if person["title"] and len(sample_titles_seen) < 8:
-                sample_titles_seen.append(person["title"])
+            # Collect unique titles for the warning message (capped at 8 unique
+            # values so the warning stays readable).
+            t = person["title"]
+            if t and t not in sample_titles_seen and len(sample_titles_seen) < 8:
+                sample_titles_seen.append(t)
 
             matched_title = _matching_tier_title(person["title"], titles)
-            if not matched_title or not person["email"]:
+            if not matched_title:
                 continue
+
+            # Keep the contact even without an email -- they still have a
+            # verified name, phone, and/or LinkedIn URL that's worth reviewing.
+            # An empty email here is better than silently dropping a real lead.
 
             contact = Contact(
                 company_id=company.id,
