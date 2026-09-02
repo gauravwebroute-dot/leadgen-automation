@@ -84,6 +84,7 @@ def run_contact_finder(
     queries_attempted = 0
     warnings: List[str] = []
     total_people_seen = 0
+    duplicates_skipped = 0   # title-matched contacts already in DB from prior runs
     sample_titles_seen: List[str] = []
 
     for company in companies:
@@ -147,9 +148,14 @@ def run_contact_finder(
             try:
                 db.flush()
             except IntegrityError:
+                # Contact already exists from a previous search run.
+                # rollback() expunges the new object; we track the count so
+                # the warning message tells the user "already in pipeline"
+                # instead of falsely reporting "no titles matched".
                 db.rollback()
+                duplicates_skipped += 1
                 logger.info(
-                    "[contact_finder]   → DUPLICATE skipped: %s %s at %s",
+                    "[contact_finder]   → DUPLICATE (already in pipeline): %s %s at %s",
                     person["first_name"], person["last_name"], company.name,
                 )
                 continue
@@ -160,8 +166,8 @@ def run_contact_finder(
         time.sleep(_QUERY_DELAY_SECONDS)
 
     logger.info(
-        "[contact_finder] DONE: companies=%d, people_seen=%d, matched=%d, wanted=%s",
-        len(companies), total_people_seen, len(found), titles,
+        "[contact_finder] DONE: companies=%d, people_seen=%d, new=%d, duplicates=%d, wanted=%s",
+        len(companies), total_people_seen, len(found), duplicates_skipped, titles,
     )
 
     if companies and not found and not warnings:
@@ -170,6 +176,14 @@ def run_contact_finder(
                 "Hunter returned 0 people for these company domains -- likely too small/low "
                 "web-presence for Hunter's data, not a titles problem. Try larger, more "
                 "established companies."
+            )
+        elif duplicates_skipped > 0:
+            # Every title-matched contact was already in the pipeline from a
+            # prior run -- this is not an error, just an informational note.
+            warnings.append(
+                f"Hunter found {duplicates_skipped} contact(s) matching your target titles, "
+                f"but they are already in your pipeline from a previous search. "
+                f"Check the Pending / Approved / Rejected tabs to review them."
             )
         else:
             sample = ", ".join(f'"{t}"' for t in sample_titles_seen) or "none had a title listed"
