@@ -78,6 +78,8 @@ def run_contact_finder(
     found: List[Contact] = []
     queries_attempted = 0
     warnings: List[str] = []
+    total_people_seen = 0
+    sample_titles_seen: List[str] = []
 
     for company in companies:
         domain = _domain_from_website(company.website)
@@ -94,7 +96,12 @@ def run_contact_finder(
                 warnings.append(msg)
             continue
 
+        total_people_seen += len(people)
+
         for person in people:
+            if person["title"] and len(sample_titles_seen) < 8:
+                sample_titles_seen.append(person["title"])
+
             matched_title = _matching_tier_title(person["title"], titles)
             if not matched_title or not person["email"]:
                 continue
@@ -130,10 +137,18 @@ def run_contact_finder(
         time.sleep(_QUERY_DELAY_SECONDS)
 
     if companies and not found and not warnings:
-        warnings.append(
-            "Hunter found the domain(s) but no one matched your target titles -- "
-            "try broader titles, or the company may be too small for Hunter to have data on."
-        )
+        if total_people_seen == 0:
+            warnings.append(
+                "Hunter returned 0 people for these company domains -- likely too small/low "
+                "web-presence for Hunter's data, not a titles problem. Try larger, more "
+                "established companies."
+            )
+        else:
+            sample = ", ".join(f'"{t}"' for t in sample_titles_seen) or "none had a title listed"
+            warnings.append(
+                f"Hunter found {total_people_seen} people at these domains, but none matched "
+                f"your target titles. Actual titles seen: {sample}."
+            )
 
     db.commit()
     return found, queries_attempted, warnings
