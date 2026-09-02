@@ -85,14 +85,14 @@ class Contact(Base):
     first_name = Column(String)
     last_name = Column(String)
     title = Column(String)
-    title_tier = Column(Enum(TitleTier))
+    title_tier = Column(Enum(TitleTier, native_enum=False), nullable=True)
     linkedin_url = Column(String)
     direct_phone = Column(String)
     email = Column(String)
     email_confidence = Column(String)  # "verified" | "pattern_guess" | "unknown"
     source = Column(String)
     notes = Column(Text)
-    status = Column(Enum(LeadStatus), default=LeadStatus.pending, nullable=False)
+    status = Column(Enum(LeadStatus, native_enum=False), default=LeadStatus.pending, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     company = relationship("Company", back_populates="contacts")

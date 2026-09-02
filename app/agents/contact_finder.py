@@ -124,10 +124,25 @@ def run_contact_finder(
             if not matched_title:
                 continue
 
-            # Keep the contact even without an email -- they still have a
-            # verified name, phone, and/or LinkedIn URL that's worth reviewing.
-            # An empty email is better than silently dropping a real lead.
-            logger.info("[contact_finder]   → MATCH '%s' -- saving contact", matched_title)
+            existing_contact = (
+                db.query(Contact)
+                .filter(
+                    Contact.company_id == company.id,
+                    Contact.first_name == person["first_name"],
+                    Contact.last_name == person["last_name"],
+                )
+                .first()
+            )
+
+            if existing_contact:
+                logger.info(
+                    "[contact_finder]   → Found existing contact in DB (id=%d, status=%s): %s %s at %s",
+                    existing_contact.id, existing_contact.status, person["first_name"], person["last_name"], company.name,
+                )
+                found.append(existing_contact)
+                continue
+
+            logger.info("[contact_finder]   → MATCH '%s' -- creating new contact", matched_title)
 
             contact = Contact(
                 company_id=company.id,
@@ -137,31 +152,26 @@ def run_contact_finder(
                 title_tier=TITLE_TIER_MAP.get(matched_title, TitleTier.tier_2),
                 linkedin_url=person["linkedin_url"],
                 direct_phone=person["phone"] or company.main_phone,
-                email=person["email"],
+                email=person["email"] or None,
                 # Hunter's own verification status -- "valid", "accept_all",
                 # or "unknown" -- not a guess we're labeling ourselves.
                 email_confidence=person["email_status"],
                 source="hunter_domain_search",
+                status=LeadStatus.pending,
                 notes=f"Department: {person['department']}" if person["department"] else None,
             )
             db.add(contact)
             try:
                 db.flush()
-            except IntegrityError:
-                # Contact already exists from a previous search run.
-                # rollback() expunges the new object; we track the count so
-                # the warning message tells the user "already in pipeline"
-                # instead of falsely reporting "no titles matched".
+                found.append(contact)
+                logger.info("[contact_finder]   → Contact SAVED with id=%d: %s %s", contact.id, contact.first_name, contact.last_name)
+            except Exception as e:
                 db.rollback()
-                duplicates_skipped += 1
-                logger.info(
-                    "[contact_finder]   → DUPLICATE (already in pipeline): %s %s at %s",
-                    person["first_name"], person["last_name"], company.name,
+                logger.error(
+                    "[contact_finder]   → FAILED to save contact %s %s: %s",
+                    person["first_name"], person["last_name"], e, exc_info=True,
                 )
                 continue
-
-            found.append(contact)
-            logger.info("[contact_finder]   → Contact queued (will commit at end)")
 
         time.sleep(_QUERY_DELAY_SECONDS)
 

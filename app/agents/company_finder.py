@@ -111,12 +111,18 @@ def run_company_finder(
                 db.add(company)
                 try:
                     db.flush()
+                    found.append(company)
                 except IntegrityError:
                     db.rollback()
-                    logger.info("Duplicate company skipped: %s (%s)", name, search_run.city)
+                    logger.info("Company already in DB: %s (%s) — retrieving existing record", name, search_run.city)
+                    existing = (
+                        db.query(Company)
+                        .filter(Company.name == name, Company.city == search_run.city)
+                        .first()
+                    )
+                    if existing:
+                        found.append(existing)
                     continue
-
-                found.append(company)
 
             time.sleep(_QUERY_DELAY_SECONDS)
 
