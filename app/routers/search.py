@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
-from app.models import SearchRun
+from app.models import RunStatus, SearchRun
 from app.orchestrator import run_pipeline_for_run
 from app.schemas import SearchRunCreate, SearchRunOut
 
@@ -12,14 +12,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/search-runs", tags=["search"])
 
 
-def _run_pipeline_background(search_run_id: int, industries: list[str], titles: list[str] | None):
-    # Background tasks need their own DB session — the request-scoped one
+def _run_pipeline_background(
+    search_run_id: int,
+    industries: list[str],
+    titles: list[str] | None,
+    max_companies_for_contacts: int | None,
+):
+    # Background tasks need their own DB session -- the request-scoped one
     # from get_db() closes as soon as the endpoint returns.
     db = SessionLocal()
     try:
-        run_pipeline_for_run(db, search_run_id, industries, titles)
-    except Exception:
+        run_pipeline_for_run(db, search_run_id, industries, titles, max_companies_for_contacts)
+    except Exception as e:
         logger.exception("Pipeline run %d failed", search_run_id)
+        # Mark it failed rather than leaving it stuck on "running" forever --
+        # this is what the dashboard polls to know something went wrong.
+        search_run = db.get(SearchRun, search_run_id)
+        if search_run:
+            search_run.status = RunStatus.failed
+            search_run.error_message = str(e)[:1000]
+            db.add(search_run)
+            db.commit()
     finally:
         db.close()
 
@@ -31,8 +44,8 @@ def create_search_run(
     db: Session = Depends(get_db),
 ):
     """Kicks off a search run and returns immediately; the pipeline runs in
-    the background. Poll GET /search-runs/{id} for result_count, or check
-    GET /leads?status=pending once it's done."""
+    the background. Poll GET /search-runs/{id} for status -- "running" ->
+    "completed"/"failed" -- or check GET /leads?status=pending once done."""
     search_run = SearchRun(
         city=payload.city,
         industry=", ".join(payload.industries),
@@ -43,7 +56,11 @@ def create_search_run(
     db.refresh(search_run)
 
     background_tasks.add_task(
-        _run_pipeline_background, search_run.id, payload.industries, payload.titles
+        _run_pipeline_background,
+        search_run.id,
+        payload.industries,
+        payload.titles,
+        payload.max_companies_for_contacts,
     )
     return search_run
 

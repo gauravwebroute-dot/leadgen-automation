@@ -53,19 +53,26 @@ def run_contact_finder(
     companies: List[Company],
     titles: Optional[List[str]] = None,
     max_results_per_query: int = 5,
-) -> List[Contact]:
+) -> Tuple[List[Contact], int]:
     """For each company, search for people holding each target title.
 
     Uses `site:linkedin.com/in` — this queries Google's public index, not
     linkedin.com directly, matching the manual research process it's
     automating rather than scraping LinkedIn itself.
+
+    This is the expensive stage against your Google CSE daily quota: it's
+    one query per (company x title) — 10 companies x 6 default titles is
+    60 queries in a single run. Returns (contacts_found, queries_attempted)
+    so callers can track usage.
     """
     titles = titles or TIER_1_TITLES
     found: List[Contact] = []
+    queries_attempted = 0
 
     for company in companies:
         for title in titles:
             query = f'site:linkedin.com/in "{title}" "{company.name}"'
+            queries_attempted += 1
 
             try:
                 items = google_search(query, num=max_results_per_query)
@@ -101,4 +108,4 @@ def run_contact_finder(
             time.sleep(_QUERY_DELAY_SECONDS)
 
     db.commit()
-    return found
+    return found, queries_attempted

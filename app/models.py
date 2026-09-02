@@ -29,6 +29,12 @@ class LeadStatus(str, enum.Enum):
     synced = "synced"      # pushed to Odoo
 
 
+class RunStatus(str, enum.Enum):
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+
+
 class SearchRun(Base):
     __tablename__ = "search_runs"
 
@@ -37,6 +43,12 @@ class SearchRun(Base):
     industry = Column(String, nullable=False)
     titles_targeted = Column(String, nullable=False)
     result_count = Column(Integer, default=0)
+    status = Column(Enum(RunStatus), default=RunStatus.running, nullable=False)
+    error_message = Column(Text, nullable=True)
+    # Total external API calls this run made (company + contact provider
+    # calls combined) -- shown in the dashboard so a spike in usage is
+    # visible instead of a mystery.
+    queries_used = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     companies = relationship("Company", back_populates="search_run")

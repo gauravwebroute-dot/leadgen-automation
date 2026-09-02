@@ -3,13 +3,17 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models import TitleTier, LeadStatus
+from app.models import TitleTier, LeadStatus, RunStatus
 
 
 class SearchRunCreate(BaseModel):
     city: str
     industries: List[str]
     titles: Optional[List[str]] = None
+    # Safety cap: only the first N companies found get contact-searched.
+    # Contact search costs (titles-per-company) Google CSE queries EACH --
+    # this is what actually burns the daily quota, not company search.
+    max_companies_for_contacts: Optional[int] = 5
 
 
 class SearchRunOut(BaseModel):
@@ -20,6 +24,9 @@ class SearchRunOut(BaseModel):
     industry: str
     titles_targeted: str
     result_count: int
+    status: RunStatus
+    error_message: Optional[str] = None
+    queries_used: int
     created_at: datetime
 
 

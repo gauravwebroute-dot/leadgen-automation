@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -59,17 +59,23 @@ def run_company_finder(
     search_run: SearchRun,
     industries: List[str],
     max_results_per_query: int = 10,
-) -> List[Company]:
+) -> Tuple[List[Company], int]:
     """Search for companies matching each industry near search_run.city.
     Provider (Outscraper for testing, Places for production-grade calls)
     is picked via COMPANY_DISCOVERY_PROVIDER in .env. Deduplicates on
     (name, city).
+
+    Returns (companies_found, queries_attempted) -- the query count is one
+    attempt per (industry x template) combination, regardless of whether
+    that attempt returned results or failed.
     """
     found: List[Company] = []
+    queries_attempted = 0
 
     for industry in industries:
         for template in QUERY_TEMPLATES:
             query = template.format(industry=industry, city=search_run.city)
+            queries_attempted += 1
             results = _search_places(query, max_results_per_query)
 
             for result in results:
@@ -99,4 +105,4 @@ def run_company_finder(
             time.sleep(_QUERY_DELAY_SECONDS)
 
     db.commit()
-    return found
+    return found, queries_attempted

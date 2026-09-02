@@ -198,11 +198,20 @@
       <div class="field">
         <label for="f-titles">Target titles</label>
         <input type="text" id="f-titles" placeholder="Facilities Manager, Plant Manager, Buyer" />
-        <small>Leave blank to use the default Tier 1 list</small>
+        <small>Leave blank to use the default Tier 1 list (6 titles)</small>
+      </div>
+      <div class="field" style="max-width:180px;">
+        <label for="f-max-companies">Contact-search cap</label>
+        <input type="number" id="f-max-companies" value="5" min="1" max="30" />
+        <small>Companies to run contact search on</small>
       </div>
     </div>
     <button class="btn-primary" id="run-search-btn">Run search</button>
     <span class="sub" id="search-status" style="margin-left:12px;"></span>
+    <div class="sub" style="margin-top:10px;">
+      Contact search costs one Google query per company × title — this cap protects your daily quota.
+      With the default 6 titles and a cap of 5 companies, one run uses up to 30 contact queries.
+    </div>
   </div>
 
   <div class="tabs" id="tabs">
@@ -210,6 +219,8 @@
     <div class="tab" data-status="approved">Approved</div>
     <div class="tab" data-status="rejected">Rejected</div>
     <div class="tab" data-status="synced">Synced</div>
+    <div style="flex:1;"></div>
+    <button class="btn-ghost btn-small" id="refresh-btn" style="align-self:center; margin-right:8px;">Refresh</button>
   </div>
 
   <div class="table-wrap">
@@ -357,6 +368,7 @@ document.getElementById('run-search-btn').addEventListener('click', async () => 
     .split(',').map(s => s.trim()).filter(Boolean);
   const titlesRaw = document.getElementById('f-titles').value.trim();
   const titles = titlesRaw ? titlesRaw.split(',').map(s => s.trim()).filter(Boolean) : null;
+  const maxCompanies = parseInt(document.getElementById('f-max-companies').value, 10) || 5;
   const status = document.getElementById('search-status');
 
   if(!city || !industries.length){
@@ -371,15 +383,52 @@ document.getElementById('run-search-btn').addEventListener('click', async () => 
   try{
     const run = await apiCall('/search-runs/', {
       method: 'POST',
-      body: JSON.stringify({city, industries, titles}),
+      body: JSON.stringify({city, industries, titles, max_companies_for_contacts: maxCompanies}),
     });
-    status.textContent = `Search #${run.id} running in the background — refresh Pending in a moment.`;
-    status.style.color = 'var(--green)';
+    pollSearchRun(run.id);
   }catch(e){
     status.textContent = 'Could not start search.';
     status.style.color = 'var(--red-muted)';
   }
 });
+
+// Polls the run's actual status instead of guessing when it's done --
+// this is what "refresh Pending in a moment" used to leave you to do by hand.
+async function pollSearchRun(runId){
+  const status = document.getElementById('search-status');
+  status.textContent = `Search #${runId} running…`;
+  status.style.color = 'var(--muted)';
+
+  const poll = async () => {
+    let run;
+    try{
+      run = await apiCall(`/search-runs/${runId}`);
+    }catch(e){
+      return; // toast already shown by apiCall
+    }
+
+    if(run.status === 'running'){
+      setTimeout(poll, 2000);
+      return;
+    }
+
+    if(run.status === 'completed'){
+      status.textContent = `Search #${runId} done — ${run.result_count} contact(s) found, ${run.queries_used} queries used.`;
+      status.style.color = 'var(--green)';
+      // Switch to Pending and show the new leads automatically.
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('.tab[data-status="pending"]').classList.add('active');
+      currentTab = 'pending';
+      loadLeads();
+    } else if(run.status === 'failed'){
+      status.textContent = `Search #${runId} failed: ${run.error_message || 'unknown error'}`;
+      status.style.color = 'var(--red-muted)';
+    }
+  };
+  poll();
+}
+
+document.getElementById('refresh-btn').addEventListener('click', loadLeads);
 
 document.getElementById('sync-btn').addEventListener('click', async () => {
   try{
