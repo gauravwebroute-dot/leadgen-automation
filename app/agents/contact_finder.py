@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Company, Contact, TitleTier
+from app.models import Company, Contact, LeadStatus, TitleTier
 from app.services.hunter_domain_search import HunterDomainSearchError, domain_search
 
 logger = logging.getLogger(__name__)
