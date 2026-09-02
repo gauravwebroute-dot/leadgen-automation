@@ -20,9 +20,13 @@ QUERY_TEMPLATES = [
 _QUERY_DELAY_SECONDS = 0.15
 
 
-def _search_places(query: str, limit: int) -> List[Dict]:
+def _search_places(query: str, limit: int) -> Tuple[List[Dict], str | None]:
     """Runs one company search through whichever provider is configured,
     always returning the same shape: [{name, website, phone}, ...].
+
+    Returns (results, warning) -- warning is None on success, or a
+    human-readable reason on failure, so the caller can surface it in the
+    dashboard instead of only in server logs.
 
     Swapping providers later (e.g. to a paid people-data API) only means
     adding a branch here -- callers never change.
@@ -31,17 +35,17 @@ def _search_places(query: str, limit: int) -> List[Dict]:
 
     if provider == "outscraper":
         try:
-            return maps_search(query, limit=limit)
+            return maps_search(query, limit=limit), None
         except OutscraperError as e:
             logger.warning("Outscraper search failed for '%s': %s", query, e)
-            return []
+            return [], f"Outscraper: {e}"
 
     if provider == "places":
         try:
             places = places_text_search(query, max_results=limit)
         except PlacesSearchError as e:
             logger.warning("Places search failed for '%s': %s", query, e)
-            return []
+            return [], f"Places API: {e}"
         return [
             {
                 "name": (p.get("displayName") or {}).get("text", ""),
@@ -49,9 +53,9 @@ def _search_places(query: str, limit: int) -> List[Dict]:
                 "phone": p.get("internationalPhoneNumber", ""),
             }
             for p in places
-        ]
+        ], None
 
-    raise ValueError(f"Unknown COMPANY_DISCOVERY_PROVIDER: {provider!r}")
+    return [], f"Unknown COMPANY_DISCOVERY_PROVIDER: {provider!r}"
 
 
 def run_company_finder(
@@ -59,24 +63,27 @@ def run_company_finder(
     search_run: SearchRun,
     industries: List[str],
     max_results_per_query: int = 10,
-) -> Tuple[List[Company], int]:
+) -> Tuple[List[Company], int, List[str]]:
     """Search for companies matching each industry near search_run.city.
     Provider (Outscraper for testing, Places for production-grade calls)
     is picked via COMPANY_DISCOVERY_PROVIDER in .env. Deduplicates on
     (name, city).
 
-    Returns (companies_found, queries_attempted) -- the query count is one
-    attempt per (industry x template) combination, regardless of whether
-    that attempt returned results or failed.
+    Returns (companies_found, queries_attempted, warnings) -- warnings are
+    deduplicated failure reasons collected across all queries in this run,
+    meant to be shown directly in the dashboard.
     """
     found: List[Company] = []
     queries_attempted = 0
+    warnings: List[str] = []
 
     for industry in industries:
         for template in QUERY_TEMPLATES:
             query = template.format(industry=industry, city=search_run.city)
             queries_attempted += 1
-            results = _search_places(query, max_results_per_query)
+            results, warning = _search_places(query, max_results_per_query)
+            if warning and warning not in warnings:
+                warnings.append(warning)
 
             for result in results:
                 name = (result.get("name") or "").strip()
@@ -104,5 +111,13 @@ def run_company_finder(
 
             time.sleep(_QUERY_DELAY_SECONDS)
 
+    if not found and not warnings:
+        # Provider worked (no errors) but genuinely returned nothing --
+        # worth saying explicitly rather than leaving it ambiguous.
+        warnings.append(
+            f"{settings.company_discovery_provider} returned 0 results for all queries -- "
+            "try a broader industry term or a different/nearby city."
+        )
+
     db.commit()
-    return found, queries_attempted
+    return found, queries_attempted, warnings

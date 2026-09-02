@@ -413,8 +413,20 @@ async function pollSearchRun(runId){
     }
 
     if(run.status === 'completed'){
-      status.textContent = `Search #${runId} done — ${run.result_count} contact(s) found, ${run.queries_used} queries used.`;
-      status.style.color = 'var(--green)';
+      let msg = `Search #${runId} done — ${run.result_count} contact(s) found, ${run.queries_used} queries used.`;
+      status.innerHTML = '';
+      status.style.color = run.warnings ? 'var(--amber)' : 'var(--green)';
+      status.textContent = msg;
+      document.querySelectorAll('.warn-box').forEach(el => el.remove());
+      if(run.warnings){
+        const warnBox = document.createElement('div');
+        warnBox.className = 'warn-box';
+        warnBox.style.marginTop = '6px';
+        warnBox.style.color = 'var(--red-muted)';
+        warnBox.style.fontSize = '13px';
+        warnBox.innerHTML = run.warnings.split('\n').map(w => `⚠ ${w}`).join('<br>');
+        status.after(warnBox);
+      }
       // Switch to Pending and show the new leads automatically.
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelector('.tab[data-status="pending"]').classList.add('active');

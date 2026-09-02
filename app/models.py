@@ -49,6 +49,10 @@ class SearchRun(Base):
     # calls combined) -- shown in the dashboard so a spike in usage is
     # visible instead of a mystery.
     queries_used = Column(Integer, default=0)
+    # Deduplicated, human-readable reasons the run found nothing (bad key,
+    # 0 results from provider, quota hit) -- shown directly in the
+    # dashboard instead of requiring a trip to the server logs.
+    warnings = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     companies = relationship("Company", back_populates="search_run")

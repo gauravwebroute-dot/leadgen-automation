@@ -36,7 +36,7 @@ def run_pipeline_for_run(
     if not search_run:
         raise ValueError(f"SearchRun {search_run_id} not found")
 
-    companies, company_queries = run_company_finder(db, search_run, industries)
+    companies, company_queries, company_warnings = run_company_finder(db, search_run, industries)
     logger.info("Run %d: found %d companies (%d queries)", search_run.id, len(companies), company_queries)
 
     companies_for_contacts = companies[:cap]
@@ -46,13 +46,16 @@ def run_pipeline_for_run(
             search_run.id, cap, len(companies),
         )
 
-    contacts, contact_queries = run_contact_finder(db, companies_for_contacts, titles)
+    contacts, contact_queries, contact_warnings = run_contact_finder(db, companies_for_contacts, titles)
     logger.info("Run %d: found %d contacts (%d queries)", search_run.id, len(contacts), contact_queries)
 
     enriched = run_enrichment(db, contacts)
 
+    all_warnings = company_warnings + contact_warnings
+
     search_run.result_count = len(enriched)
     search_run.queries_used = company_queries + contact_queries
+    search_run.warnings = "\n".join(all_warnings)[:2000] if all_warnings else None
     search_run.status = RunStatus.completed
     db.add(search_run)
     db.commit()
@@ -62,4 +65,5 @@ def run_pipeline_for_run(
         "companies_found": len(companies),
         "contacts_found": len(contacts),
         "queries_used": search_run.queries_used,
+        "warnings": all_warnings,
     }

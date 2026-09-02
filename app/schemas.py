@@ -27,6 +27,7 @@ class SearchRunOut(BaseModel):
     status: RunStatus
     error_message: Optional[str] = None
     queries_used: int
+    warnings: Optional[str] = None
     created_at: datetime
 
 
